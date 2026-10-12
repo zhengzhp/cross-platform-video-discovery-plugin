@@ -5,6 +5,11 @@ export interface Interest {
   depth: number;
 }
 
+/**
+ * 平台标识（可扩展字符串）
+ */
+export type PlatformId = string;
+
 export interface Candidate {
   platform: string;
   platformId?: string;
@@ -17,6 +22,11 @@ export interface Candidate {
   channel: 'page' | 'external-search';
   verification: 'page-observed' | 'unverified';
 }
+
+/**
+ * 候选视频（别名，用于平台模块）
+ */
+export type VideoCandidate = Candidate;
 
 export interface Video extends Candidate { key: string }
 export interface Query { platform: string; text: string }

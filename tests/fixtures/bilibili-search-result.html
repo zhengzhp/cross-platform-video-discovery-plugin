@@ -1,0 +1,41 @@
+<!-- 
+  Bilibili 搜索结果页面片段（模拟夹具）
+  
+  这是一个简化的 Bilibili 搜索结果页面结构，用于测试视频提取逻辑。
+  实际页面结构可能更复杂，但这个夹具包含了关键的提取元素。
+-->
+<div class="video-list">
+  <div class="video-item">
+    <a href="//www.bilibili.com/video/BV1xx411c7mD" title="TypeScript 入门教程">
+      <h3 class="title">TypeScript 入门教程</h3>
+    </a>
+    <div class="up-name">
+      <a href="//space.bilibili.com/123456">技术UP主</a>
+    </div>
+    <span class="duration">12:34</span>
+  </div>
+  
+  <div class="video-item">
+    <a href="//www.bilibili.com/video/BV1yy4y1z7zz" data-title="Node.js 开发实战">
+      <img src="cover.jpg" alt="Node.js 开发实战">
+    </a>
+    <div class="author">
+      <span>编程教室</span>
+    </div>
+  </div>
+  
+  <div class="video-item">
+    <a title="前端工程化最佳实践" url="https://www.bilibili.com/video/BV1ab4y1c7sS">
+      <div class="info">
+        <h4>前端工程化最佳实践</h4>
+      </div>
+    </a>
+  </div>
+  
+  <!-- 重复的视频（用于测试去重） -->
+  <div class="video-item">
+    <a href="//www.bilibili.com/video/BV1xx411c7mD">
+      <span>TypeScript 入门教程（重复）</span>
+    </a>
+  </div>
+</div>
