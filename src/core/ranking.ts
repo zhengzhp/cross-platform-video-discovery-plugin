@@ -63,7 +63,9 @@ export function rankCandidates(candidates: Candidate[], prefs: Preferences, opti
   const pool: RankedVideo[] = [];
   for (const video of unique.values()) {
     if (prefs.blockedVideos.has(video.key) || (video.author && prefs.blockedAuthors.has(authorKey(video)))) continue;
-    if (!options.includeHistory && (prefs.seen.has(video.key) || prefs.displayed.has(video.key))) continue;
+    // Filter by delivery confirmation + explicit seen, not just saved results.
+    // Saved but undelivered/cancelled results are not considered history.
+    if (!options.includeHistory && (prefs.seen.has(video.key) || prefs.delivered.has(video.key))) continue;
     const corpus = `${video.title} ${video.description ?? ''}`.toLocaleLowerCase();
     if (prefs.interest.excludedTerms.some(term => corpus.includes(term.toLocaleLowerCase()))) continue;
     const reasons: string[] = [];

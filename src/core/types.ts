@@ -59,13 +59,23 @@ export interface Feedback {
   createdAt: number;
   revoked: boolean;
 }
+export interface DeliveryConfirmation {
+  /** Idempotent delivery confirmation with explicit result set. */
+  batchId: string;
+  userId: string;
+  /** Explicitly delivered video keys; empty if no results delivered. */
+  deliveredKeys: string[];
+  confirmedAt: number;
+}
 export interface Preferences {
   interest: Interest;
   topicWeights: Record<string, number>;
   blockedVideos: Set<string>;
   blockedAuthors: Set<string>;
+  /** User explicitly marked as seen; distinct from delivery confirmation. */
   seen: Set<string>;
-  displayed: Set<string>;
+  /** Successfully delivered results; saved but undelivered/cancelled not included. */
+  delivered: Set<string>;
 }
 export interface RankedVideo { video: Video; score: number; reasons: string[]; warnings: string[] }
 export interface RankingOptions { limit?: number; includeHistory?: boolean; maxDurationSeconds?: number }

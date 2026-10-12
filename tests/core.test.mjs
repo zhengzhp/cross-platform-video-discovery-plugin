@@ -128,16 +128,19 @@ test('depth feedback updates queries; revocation recomputes from effective recor
 
 test('ranking filters history, exclusion, unrelated candidates and duplicates, flags unknown hard conditions', t => {
   const {store,batch}=setup(t);
-  store.appendResults('user',batch,[candidate('seen')]);
+  store.appendResults('user',batch,[candidate('delivered')]);
+  store.finishBatch('user',batch,'completed');
+  const deliveredKey = store.getBatch('user',batch).results[0].key;
+  store.confirmDelivery('user',batch,[deliveredKey]);
   const prefs=store.getPreferences('user');
-  const input=[candidate('seen'),candidate('a',{author:'Alice'}),candidate('a'),candidate('b',{author:'Alice'}),
+  const input=[candidate('delivered'),candidate('a',{author:'Alice'}),candidate('a'),candidate('b',{author:'Alice'}),
     candidate('c',{author:'Bob'}),candidate('ad',{title:'Photography advertisement'}),candidate('unrelated',{title:'Gardening'}),
     candidate('long',{durationSeconds:1000})];
   const ranked=rankCandidates(input,prefs,{maxDurationSeconds:60});
   assert.deepEqual(ranked.map(r=>r.video.platformId),['a','c','b']);
   assert(ranked[0].warnings.includes('Duration condition cannot be verified'));
   assert(ranked[2].reasons.includes('Repeated author diversity penalty'));
-  assert.equal(rankCandidates([candidate('seen')],prefs,{includeHistory:true}).length,1);
+  assert.equal(rankCandidates([candidate('delivered')],prefs,{includeHistory:true}).length,1);
   assert.throws(()=>rankCandidates(input,prefs,{limit:11}),/limit/);
   const external=rankCandidates([candidate('ext',{channel:'external-search',verification:'unverified'})],prefs)[0];
   assert.equal(external.warnings.length,2);
@@ -164,4 +167,87 @@ test('withLock releases after rejection or cancellation, not before task settles
   }));
   const next=store.acquireLock('user'); next.release();
   await assert.rejects(store.withLock('user',abort.signal,async()=>assert.fail('must not run')));
+});
+
+test('delivery confirmation is idempotent and filters history separately from saved results', t => {
+  const {store,batch}=setup(t);
+  store.appendResults('user',batch,[candidate('a'),candidate('b'),candidate('c')]);
+  store.finishBatch('user',batch,'completed');
+
+  // Confirm partial delivery (only first 2 results)
+  const delivered = store.getBatch('user',batch).results.slice(0,2).map(v=>v.key);
+  store.confirmDelivery('user',batch,delivered);
+
+  // Delivered videos should be filtered from history
+  const prefs1 = store.getPreferences('user');
+  assert.equal(prefs1.delivered.size,2);
+  const ranked1 = rankCandidates([candidate('a'),candidate('b'),candidate('c')],prefs1);
+  assert.deepEqual(ranked1.map(r=>r.video.platformId),['c']);
+
+  // Repeated confirmation should be idempotent
+  store.confirmDelivery('user',batch,delivered);
+  assert.equal(store.getPreferences('user').delivered.size,2);
+
+  // Confirm additional delivery
+  const allKeys = store.getBatch('user',batch).results.map(v=>v.key);
+  store.confirmDelivery('user',batch,allKeys);
+  assert.equal(store.getPreferences('user').delivered.size,3);
+
+  // Cannot confirm delivery for unfinished batch
+  const batch2 = store.createBatch('user',[{platform:'new-source',text:'Photography'}]);
+  store.appendResults('user',batch2,[candidate('d')]);
+  assert.throws(()=>store.confirmDelivery('user',batch2,[store.getBatch('user',batch2).results[0].key]),/finished/);
+
+  // Cannot confirm delivery for non-existent video key
+  store.finishBatch('user',batch2,'completed');
+  assert.throws(()=>store.confirmDelivery('user',batch2,['invalid-key']),/not in batch/);
+});
+
+test('saved but undelivered results do not filter history', t => {
+  const {store,batch}=setup(t);
+  store.appendResults('user',batch,[candidate('saved-only')]);
+  store.finishBatch('user',batch,'cancelled',[],0);
+
+  // Saved but cancelled/undelivered should not filter history
+  const prefs = store.getPreferences('user');
+  assert.equal(prefs.delivered.size,0);
+  const ranked = rankCandidates([candidate('saved-only')],prefs);
+  assert.equal(ranked.length,1,'Saved but undelivered result should not be filtered');
+
+  // After explicit delivery confirmation, it should filter
+  store.confirmDelivery('user',batch,[store.getBatch('user',batch).results[0].key]);
+  const prefs2 = store.getPreferences('user');
+  assert.equal(prefs2.delivered.size,1);
+  assert.equal(rankCandidates([candidate('saved-only')],prefs2).length,0);
+});
+
+test('seen feedback and delivery confirmation filter independently', t => {
+  const {store,batch}=setup(t);
+  store.appendResults('user',batch,[candidate('a'),candidate('b')]);
+  store.finishBatch('user',batch,'completed');
+
+  // Mark one as seen via feedback
+  store.addFeedback('user',{batchId:batch,number:1,reason:'seen'});
+  const prefs1 = store.getPreferences('user');
+  assert.equal(prefs1.seen.size,1);
+  assert.equal(prefs1.delivered.size,0);
+
+  // Both seen and undelivered should be filtered
+  const ranked1 = rankCandidates([candidate('a'),candidate('b')],prefs1);
+  assert.deepEqual(ranked1.map(r=>r.video.platformId),['b']);
+
+  // Confirm delivery of the other video
+  const keyB = store.getBatch('user',batch).results[1].key;
+  store.confirmDelivery('user',batch,[keyB]);
+  const prefs2 = store.getPreferences('user');
+  assert.equal(prefs2.seen.size,1);
+  assert.equal(prefs2.delivered.size,1);
+
+  // Both should now be filtered
+  const ranked2 = rankCandidates([candidate('a'),candidate('b')],prefs2);
+  assert.equal(ranked2.length,0);
+
+  // includeHistory should bypass filtering
+  const ranked3 = rankCandidates([candidate('a'),candidate('b')],prefs2,{includeHistory:true});
+  assert.equal(ranked3.length,2);
 });

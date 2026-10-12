@@ -4,7 +4,7 @@ import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { authorKey, normalizeCandidate, text, validateInterest } from './ranking.js';
 import { BusyError } from './types.js';
-import type { Batch, BatchStatus, Candidate, Feedback, FeedbackInput, FeedbackReason, FeedbackScope, Interest, Preferences, Query, SourceStatus, Video } from './types.js';
+import type { Batch, BatchStatus, Candidate, DeliveryConfirmation, Feedback, FeedbackInput, FeedbackReason, FeedbackScope, Interest, Preferences, Query, SourceStatus, Video } from './types.js';
 
 type Row = Record<string, unknown>;
 const decode = <T>(value: unknown): T => JSON.parse(String(value)) as T;
@@ -30,6 +30,7 @@ export class DiscoveryStore {
       CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, queries TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, sources TEXT NOT NULL DEFAULT '[]', elapsed_ms INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS results(batch_id TEXT NOT NULL REFERENCES batches(id), number INTEGER NOT NULL, video_key TEXT NOT NULL REFERENCES videos(key), PRIMARY KEY(batch_id,number), UNIQUE(batch_id,video_key));
       CREATE TABLE IF NOT EXISTS feedback(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, batch_id TEXT NOT NULL REFERENCES batches(id), video_key TEXT NOT NULL REFERENCES videos(key), reason TEXT NOT NULL, scope TEXT NOT NULL, target TEXT NOT NULL, created_at INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS delivery_confirmations(batch_id TEXT NOT NULL REFERENCES batches(id), user_id TEXT NOT NULL, video_key TEXT NOT NULL REFERENCES videos(key), confirmed_at INTEGER NOT NULL, PRIMARY KEY(batch_id,video_key));
       CREATE TABLE IF NOT EXISTS discovery_locks(user_id TEXT PRIMARY KEY, token TEXT NOT NULL, pid INTEGER NOT NULL);
       PRAGMA user_version=1;
       COMMIT;
@@ -159,14 +160,30 @@ export class DiscoveryStore {
       scope: row.scope as FeedbackScope, target: String(row.target), createdAt: Number(row.created_at), revoked: Boolean(row.revoked),
     }));
   }
+  /** Idempotent delivery confirmation with explicit result set. Repeated calls do not shift numbers. */
+  confirmDelivery(userId: string, batchId: string, deliveredKeys: string[]): void {
+    if (!Array.isArray(deliveredKeys) || deliveredKeys.length > 10) throw new Error('Invalid delivery confirmation');
+    const clean = deliveredKeys.map(k => text(k, 'video key', 300));
+    this.transaction(() => {
+      const batch = this.ownedBatch(userId, batchId);
+      if (!['completed','failed','cancelled'].includes(String(batch.status))) throw new Error('Batch must be finished before delivery confirmation');
+      const confirmedAt = Date.now();
+      for (const videoKey of clean) {
+        const exists = this.db.prepare('SELECT 1 FROM results WHERE batch_id=? AND video_key=?').get(batchId, videoKey);
+        if (!exists) throw new Error('Video key not in batch results');
+        this.db.prepare('INSERT INTO delivery_confirmations VALUES(?,?,?,?) ON CONFLICT(batch_id,video_key) DO NOTHING')
+          .run(batchId, this.user(userId), videoKey, confirmedAt);
+      }
+    });
+  }
   /** Derived inside a transaction, never an increment-only cached preference. */
   getPreferences(userId: string): Preferences {
     return this.transaction(() => {
       const interest = this.getInterest(userId);
       const prefs: Preferences = { interest, topicWeights: Object.create(null) as Record<string,number>,
-        blockedVideos: new Set(), blockedAuthors: new Set(), seen: new Set(), displayed: new Set() };
-      for (const row of this.db.prepare('SELECT r.video_key FROM results r JOIN batches b ON b.id=r.batch_id WHERE b.user_id=?').all(this.user(userId))) {
-        prefs.displayed.add(String(row.video_key));
+        blockedVideos: new Set(), blockedAuthors: new Set(), seen: new Set(), delivered: new Set() };
+      for (const row of this.db.prepare('SELECT video_key FROM delivery_confirmations WHERE user_id=?').all(this.user(userId))) {
+        prefs.delivered.add(String(row.video_key));
       }
       let depthDelta = 0;
       for (const f of this.listFeedback(userId).filter(f => !f.revoked)) {
