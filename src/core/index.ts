@@ -1,2 +1,3 @@
-/** 共享业务核心入口。当前仅占位，尚未实现兴趣、编排、存储或反馈。 */
-export {};
+export * from './types.js';
+export { normalizeCandidate, validateInterest, rankCandidates, buildQueries, authorKey } from './ranking.js';
+export { DiscoveryStore } from './store.js';

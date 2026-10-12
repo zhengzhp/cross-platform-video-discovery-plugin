@@ -9,7 +9,7 @@
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "types": [],
+    "types": ["node"],
     "noEmit": true
   },
   "include": [

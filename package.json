@@ -2,7 +2,7 @@
   "name": "cross-platform-video-discovery-plugin",
   "version": "0.0.0",
   "private": true,
-  "description": "Pi 与 DeepSeek Harness 视频发现插件项目骨架（尚未实现）",
+  "description": "Pi 与 DeepSeek Harness 视频发现插件共享核心（开发中）",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -20,9 +20,11 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "clean": "node scripts/clean.mjs"
   },
   "devDependencies": {
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "@types/node": "^22.13.0"
   }
 }
